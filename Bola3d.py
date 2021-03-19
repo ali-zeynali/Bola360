@@ -11,9 +11,10 @@ class Bola3d:
         self.D = video.D
         self.M = len(video.values)
         self.V = v_coeff * (video.buffer_size - self.D) / (video.values[-1] + gamma * video.delta)
+        self.all_sols = self.get_all_solutions(self.D)
 
     def get_action(self, probs):
-        all_sols = self.get_all_solutions(self.D)
+        all_sols = self.all_sols
         solution = None
         max_rho = -1
         for sol in all_sols:

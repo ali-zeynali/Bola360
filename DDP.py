@@ -8,10 +8,11 @@ class DDP:
         self.D = video.D
         self.bandwidth = bandwidth
         self.t_0 = t_0
-        self.Nb_max = self.buffer_size / (min(video.delta, t_0) / 10)
+        self.Nb_max = 300
+        self.b_0 = buffer_size * video.delta / self.Nb_max
         self.N = video.N
-        self.Nt_max = int(self.video.sizes[-1] / (self.bandwidth.min_val * t_0))
-        self.rewards = [[] for _ in range(self.N)]
+        self.Nt_max = int(self.video.sizes[-1] * self.N * self.D/ (self.bandwidth.min_val * t_0))
+        self.rewards = [[] for _ in range(self.N + 1)]
         for n in range(self.N + 1):
             self.rewards[n] = [[] for _ in range(self.Nt_max)]
             for t in range(self.Nt_max):
@@ -22,9 +23,10 @@ class DDP:
                         self.rewards[n][t][b] = 0
 
         self.solutions = [None for _ in range(self.N)]
-        self.Time = [float('inf') for _ in range(self.N)]
+        self.Time = [self.t_0 * self.Nt_max for _ in range(self.N)]
         self.M = len(video.values)
         self.gamma = gamma
+        self.all_sols = self.get_all_solutions(self.D)
 
 
     def get_all_solutions(self, D):
@@ -41,28 +43,39 @@ class DDP:
 
     def train(self, all_probs):
         for n in range(1, self.N + 1):
+            print("Optimal n: ", n)
             #probs = self.head_moves.get_probabilities()
             for tp in range(self.Nt_max):
                 for bp in range(self.Nb_max):
-                    if self.rewards[n][tp][bp] > float('-inf'):
-                        all_sols = self.get_all_solutions(self.D)
+                    if self.rewards[n-1][tp][bp] > float('-inf'):
+                        all_sols = self.all_sols
                         for m in all_sols:
-                            x = self.bandwidth.download_time(m, tp)
+                            if np.sum(m) == 0:
+                                continue
+                            x = self.bandwidth.download_time(m, tp, self.video)
                             x0 = int(x / self.t_0) * self.t_0
-                            xp = max(x0, bp + self.D *self.video.delta - self.buffer_size)
+                            xp = max(x0, bp + self.D *self.video.delta - self.buffer_size * self.video.delta)
                             y = max(xp - bp, 0)
-                            t = tp + xp
-                            b = bp + xp + y + self.D * self.video.delta
+                            t = tp * self.t_0 + xp
+                            b = max(bp * self.b_0 - xp + y + self.D * self.video.delta, 0)
+                            if int(b / self.b_0) >= self.Nb_max:
+                                continue
+                            if int(t / self.t_0) >= self.Nt_max:
+                                continue
+
                             expected_vals = 0
                             for i in range(self.D):
                                 expected_vals += all_probs[n-1][i] * self.video.values[m[i]]
 
-                            rp = self.rewards[n-1][tp][bp] + self.gamma * (self.video.delta - y) + expected_vals
-                            if rp / t > self.rewards[n][t][b] / self.Time[n-1]:
+                            rp = self.rewards[n-1][tp][bp] + self.gamma * (self.video.delta) + expected_vals
+                            print("n: {0}, tp:{1}, bp:{2}, t:{3}, b:{4} N_t:{5}, N_b:{6}".format(n, tp, bp, int(t / self.t_0),int(b / self.b_0), self.Nt_max, self.Nb_max))
+                            new_val = rp / t
+                            old_val = self.rewards[n][int(t / self.t_0)][int(b / self.b_0)] / self.Time[n-1]
+                            if new_val > old_val :
                                 self.solutions[n-1] = m
                                 self.Time[n-1] = t
 
-                            self.rewards[n][t][b] = max(self.rewards[n][t][b], rp)
+                            self.rewards[n][int(t / self.t_0)][int(b / self.b_0)] = max(self.rewards[n][int(t / self.t_0)][int(b / self.b_0)], rp)
     def get_optimal_solutions(self):
         return self.solutions
     def get_optimal_reward(self):

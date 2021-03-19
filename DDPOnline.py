@@ -7,8 +7,9 @@ class DDPOnline:
         self.D = video.D
         self.bandwidth = bandwidth
         self.t_0 = t_0
-        self.Nb_max = self.buffer_size / (min(video.delta, t_0) / 10)
-        self.Nt_max = int(self.video.sizes[-1] / (self.bandwidth.min_val * t_0))
+        self.Nb_max = 300
+        self.b_0 = buffer_size * video.delta / self.Nb_max
+        self.Nt_max = int(self.video.sizes[-1] * self.video.N * self.D / (self.bandwidth.min_val * t_0))
         self.rewards = [[] for _ in range(self.Nt_max)]
         for t in range(self.Nt_max):
             self.rewards[t] = []
@@ -17,9 +18,10 @@ class DDPOnline:
 
 
         self.solutions = None
-        self.Time = float('inf')
+        self.Time = self.t_0 * self.Nt_max
         self.M = len(video.values)
         self.gamma = gamma
+        self.all_sols = self.get_all_solutions(self.D)
 
 
     def get_all_solutions(self, D):
@@ -35,27 +37,33 @@ class DDPOnline:
         return solution
 
     def get_action(self, probs, t, b, r0):
-        all_sols = self.get_all_solutions(self.D)
+        all_sols = self.all_sols
         for m in all_sols:
-            x = self.bandwidth.expected_download_time(m, t)
+            if np.sum(m) == 0:
+                continue
+            x = self.bandwidth.expected_download_time(m, t, self.video)
             x0 = int(x / self.t_0) * self.t_0
             xp = max(x0, b + self.D * self.video.delta - self.buffer_size)
             y = max(xp - b, 0)
             tp = t + xp
-            bp = b + xp + y + self.D * self.video.delta
+            bp = b - xp + y + self.D * self.video.delta
             expected_vals = 0
             for i in range(self.D):
                 expected_vals += probs[i] * self.video.values[m[i]]
-
-            rp = r0 +  self.gamma * (self.video.delta - y) + expected_vals
-            if rp / tp > self.rewards[tp][bp] / self.Time:
+            if int(bp / self.b_0) >= self.Nb_max:
+                continue
+            if int(tp / self.t_0) >= self.Nt_max:
+                continue
+            rp = r0 +  self.gamma * (self.video.delta) + expected_vals
+            new_val = rp / tp
+            old_val =  self.rewards[int(tp / self.t_0)][int(bp / self.b_0)] / self.Time
+            if new_val > old_val:
                 self.solutions = m
-                self.Time = t
+                self.Time = tp
 
-            self.rewards[t][b] = max(self.rewards[tp][bp], rp)
-
-    def get_optimal_solutions(self):
+            self.rewards[int(tp / self.t_0)][int(bp / self.b_0)] = max(self.rewards[int(tp / self.t_0)][int(bp / self.b_0)], rp)
         return self.solutions
+
 
 
 
