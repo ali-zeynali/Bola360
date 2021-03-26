@@ -12,6 +12,8 @@ class Bola3d:
         self.M = len(video.values)
         self.V = v_coeff * (video.buffer_size - self.D) / (video.values[-1] + gamma * video.delta)
         self.all_sols = self.get_all_solutions(self.D)
+        self.downloaded_segments = [0 for _ in range(self.video.N)]
+        self.last_finished_segments = -1
 
     def get_action(self, probs):
         all_sols = self.all_sols
@@ -24,10 +26,18 @@ class Bola3d:
                 solution = sol
         return solution
 
-    def take_action(self, solution):
+    def take_action(self, solution,n ,time):
+        finished_segments = int(time / self.video.delta)
+        for i in range(self.last_finished_segments, min(finished_segments, n + 1)):
+            if i >= 0:
+                self.buffer -= self.downloaded_segments[i]
+        self.buffer = max(self.buffer, 0)
+        number_of_downloaded_segments = 0
         for v in solution:
             if v > 0:
-                self.buffer += 1
+                number_of_downloaded_segments += 1
+        self.buffer += number_of_downloaded_segments
+        self.downloaded_segments[n] = number_of_downloaded_segments
 
 
     def calc_rho(self, solution, probs):

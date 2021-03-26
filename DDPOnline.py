@@ -37,6 +37,7 @@ class DDPOnline:
         return solution
 
     def get_action(self, probs, t, b, r0):
+        self.solutions = None
         all_sols = self.all_sols
         for m in all_sols:
             if np.sum(m) == 0:
@@ -62,7 +63,10 @@ class DDPOnline:
                 self.Time = tp
 
             self.rewards[int(tp / self.t_0)][int(bp / self.b_0)] = max(self.rewards[int(tp / self.t_0)][int(bp / self.b_0)], rp)
-        return self.solutions
+        if self.solutions == None:
+            return [0 for _ in range(self.D)]
+        else:
+            return self.solutions
 
 
 
