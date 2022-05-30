@@ -36,13 +36,19 @@ class DDPOnline:
                 solution.append(new_v)
         return solution
 
+    def get_total_size(self, sizes):
+        total_size = 0
+        for m in sizes:
+            total_size += self.video.sizes[m]
+        return total_size
     def get_action(self, probs, t, b, r0):
         self.solutions = None
         all_sols = self.all_sols
         for m in all_sols:
             if np.sum(m) == 0:
                 continue
-            x = self.bandwidth.expected_download_time(m, t, self.video)
+            total_size = self.get_total_size(m)
+            x = self.bandwidth.expected_download_time(total_size, t)
             x0 = int(x / self.t_0) * self.t_0
             xp = max(x0, b + self.D * self.video.delta - self.buffer_size)
             y = max(xp - b, 0)

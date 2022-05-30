@@ -1,11 +1,10 @@
-from Video import *
-
 import numpy as np
+
 
 class Bola3d:
     def __init__(self, video, gamma, v_coeff):
         self.video = video
-        #self.head_move = head_move
+        # self.head_move = head_move
         self.gamma = gamma
         self.buffer = 0
         self.D = video.D
@@ -16,17 +15,31 @@ class Bola3d:
         self.last_finished_segments = -1
 
     def get_action(self, probs):
+        """
+        :param probs: array size D, showing the probability of watching tiles
+        :return: array size D, showing the selected bitrates of each tile
+        """
         all_sols = self.all_sols
         solution = None
         max_rho = -1
+        max_n = 0
         for sol in all_sols:
             rho = self.calc_rho(sol, probs)
+            n_sols = 0
+            for m in sol:
+                if m > 0:
+                    n_sols += 1
             if rho > max_rho:
                 max_rho = rho
                 solution = sol
+                max_n = n_sols
+            if rho == max_rho and n_sols > max_n:
+                max_rho = rho
+                solution = sol
+                max_n = n_sols
         return solution
 
-    def take_action(self, solution,n ,time):
+    def take_action(self, solution, n, time):
         finished_segments = int(time / self.video.delta)
         for i in range(self.last_finished_segments, min(finished_segments, n + 1)):
             if i >= 0:
@@ -39,8 +52,13 @@ class Bola3d:
         self.buffer += number_of_downloaded_segments
         self.downloaded_segments[n] = number_of_downloaded_segments
 
-
     def calc_rho(self, solution, probs):
+        """
+
+        :param solution: array size D, showing the selected bitrates of each tile
+        :param probs: array size D, showing the probability of watching tiles
+        :return:
+        """
         if np.sum(solution) == 0:
             return 0
         rho = 0
@@ -48,13 +66,12 @@ class Bola3d:
         for d in range(self.D):
             m = solution[d]
             v = self.video.values[m]
-            rho += probs[d] * (self.V * (v + self.gamma * self.video.delta) - self.buffer)
+            a = 0
+            if m > 0:
+                a = 1
+            rho += probs[d] * a * (self.V * (v + self.gamma * self.video.delta) - self.buffer)
             rho2 += self.video.sizes[m]
         return rho / rho2
-
-
-
-
 
     def get_all_solutions(self, D):
         if D == 0:
@@ -67,6 +84,3 @@ class Bola3d:
                 new_v.append(m)
                 solution.append(new_v)
         return solution
-
-
-

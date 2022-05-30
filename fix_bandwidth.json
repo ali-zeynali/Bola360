@@ -1,0 +1,43 @@
+{
+  "results": [
+    {
+      "dlRate": 6000,
+      "dlDuration": 2
+    },
+    {
+      "dlRate": 8000,
+      "dlDuration": 2
+    },
+    {
+      "dlRate": 6000,
+      "dlDuration": 2
+    },
+    {
+      "dlRate": 4000,
+      "dlDuration": 5
+    },
+    {
+      "dlRate": 3000,
+      "dlDuration": 10
+    },{
+      "dlRate": 7000,
+      "dlDuration": 2
+    },{
+      "dlRate": 3000,
+      "dlDuration": 20
+    },{
+      "dlRate": 2000,
+      "dlDuration": 20
+    },{
+      "dlRate": 6000,
+      "dlDuration": 100
+    },{
+      "dlRate": 6000,
+      "dlDuration": 100
+    },{
+      "dlRate": 6000,
+      "dlDuration": 100
+    }
+
+  ]
+}
