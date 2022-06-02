@@ -1,7 +1,8 @@
-from Video import *
 from Bandwidth import *
+
+
 class DDPOnline:
-    def __init__(self, video, buffer_size, bandwidth,gamma, t_0 = 1):
+    def __init__(self, video, buffer_size, bandwidth, gamma, t_0=1):
         self.video = video
         self.buffer_size = buffer_size * self.video.delta
         self.D = video.D
@@ -16,13 +17,11 @@ class DDPOnline:
             for b in range(self.Nb_max):
                 self.rewards[t].append(float('-inf'))
 
-
         self.solutions = None
         self.Time = self.t_0 * self.Nt_max
         self.M = len(video.values)
         self.gamma = gamma
         self.all_sols = self.get_all_solutions(self.D)
-
 
     def get_all_solutions(self, D):
         if D == 0:
@@ -41,6 +40,7 @@ class DDPOnline:
         for m in sizes:
             total_size += self.video.sizes[m]
         return total_size
+
     def get_action(self, probs, t, b, r0):
         self.solutions = None
         all_sols = self.all_sols
@@ -61,28 +61,16 @@ class DDPOnline:
                 continue
             if int(tp / self.t_0) >= self.Nt_max:
                 continue
-            rp = r0 +  self.gamma * (self.video.delta) + expected_vals
+            rp = r0 + self.gamma * (self.video.delta) + expected_vals
             new_val = rp / tp
-            old_val =  self.rewards[int(tp / self.t_0)][int(bp / self.b_0)] / self.Time
+            old_val = self.rewards[int(tp / self.t_0)][int(bp / self.b_0)] / self.Time
             if new_val > old_val:
                 self.solutions = m
                 self.Time = tp
 
-            self.rewards[int(tp / self.t_0)][int(bp / self.b_0)] = max(self.rewards[int(tp / self.t_0)][int(bp / self.b_0)], rp)
+            self.rewards[int(tp / self.t_0)][int(bp / self.b_0)] = max(
+                self.rewards[int(tp / self.t_0)][int(bp / self.b_0)], rp)
         if self.solutions == None:
             return [0 for _ in range(self.D)]
         else:
             return self.solutions
-
-
-
-
-
-
-
-
-
-
-
-
-

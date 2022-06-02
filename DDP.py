@@ -10,11 +10,13 @@ class DDP:
         self.bandwidth = bandwidth
         self.t_0 = t_0
         self.Nb_max = 50
+        # self.Nb_max = 5 # TODO -: remove this line
         self.b_0 = buffer_size * video.delta / self.Nb_max
         self.N = video.N
         # self.Nt_max = int(self.video.sizes[-1] * self.N * self.D / (self.bandwidth.min_val * t_0))
         self.Nt_max = self.N * video.delta * 2 / t_0
         self.Nt_max = int(self.Nt_max)
+        # self.Nt_max = 5 # TODO -> remove this line
         self.rewards = [[] for _ in range(self.N + 1)]
         for n in range(self.N + 1):
             self.rewards[n] = [[] for _ in range(self.Nt_max)]
@@ -54,6 +56,14 @@ class DDP:
                 n += 1
         return total_size, n
 
+    def save_info(self, path="results/DDP_1.json"):
+        data = {}
+        data['solution'] = self.solutions
+        data['time'] = self.Time
+        data['reward'] = self.get_optimal_reward()
+        with open(path, 'w') as writer:
+            json.dump(data, writer)
+
     def train(self, all_probs):
         for n in range(1, self.N + 1):
             print("Calculating Optimal solution for: n = {1} / {0}".format(self.N, n))
@@ -82,11 +92,11 @@ class DDP:
                                 expected_vals += all_probs[n-1][i] * self.video.values[m[i]]
 
                             rp = self.rewards[n - 1][tp][bp] + self.gamma * (self.video.delta) + expected_vals
-                            print("n: {0}, tp:{1}, bp:{2}, t:{3}, b:{4} N_t:{5}, N_b:{6}".format(n, tp, bp,
-                                                                                                 int(t / self.t_0),
-                                                                                                 int(b / self.b_0),
-                                                                                                 self.Nt_max,
-                                                                                                 self.Nb_max))
+                            # print("n: {0}, tp:{1}, bp:{2}, t:{3}, b:{4} N_t:{5}, N_b:{6}".format(n, tp, bp,
+                            #                                                                      int(t / self.t_0),
+                            #                                                                      int(b / self.b_0),
+                            #                                                                      self.Nt_max,
+                            #                                                                      self.Nb_max))
                             new_val = rp / t
                             old_val = self.rewards[n][int(t / self.t_0)][int(b / self.b_0)] / self.Time[n - 1]
                             if new_val > old_val:

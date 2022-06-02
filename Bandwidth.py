@@ -53,10 +53,14 @@ class Bandwidth:
     def get_finish_time(self, size, start):
         remaining = size
         time = start
+        # try:
         while remaining > 0:
             remaining -= self.get_thr(time) * self.delta
             time += self.delta
         return time
+        # except Exception as e:
+        #     print(remaining)
+        #     exit(0)
 
     def expected_download_time(self, segment_size, start_time):
         down_time = -1
