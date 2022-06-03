@@ -1,6 +1,7 @@
 import glob
 import os
 import shutil
+
 from matplotlib import pyplot as plt
 
 from Bola3d import *
@@ -11,7 +12,8 @@ from Naive import *
 from Video import *
 
 
-def calc_reward(solution, buffer, download_time, delta, probs, video, gamma):
+def calc_reward(solution, segment, delta, probs, video, gamma, buffer_array, available_time, time,
+                rebuffer):
     """
 
     :param solution:
@@ -30,17 +32,40 @@ def calc_reward(solution, buffer, download_time, delta, probs, video, gamma):
     for m in solution:
         if m > 0:
             ddp_n += 1
-    y = max(download_time - buffer, 0)
+
+    played_time = time - rebuffer
+    available_buffer = max(segment * delta, 0)
+    played_time = min(played_time, available_buffer)
+    last_played_segment = int(played_time / delta)
+    for i in range(last_played_segment):
+        buffer_array[i] = 0
+
+    last_available = 0 - delta
+    y = None
+    for i in range(segment):
+        if available_time[i] > 0:
+            last_available = available_time[i]
+
+        if buffer_array[i] > 0:
+            y = 0
+            break
+
+    if y is None:
+        y = time - last_available - delta
+        x = 1
+
+    # y = max(download_time - buffer, 0) #TODO, this line has a bug
     # buffer = max(buffer - download_time, 0) + ddp_n * video.delta
-    buffer = buffer - download_time + y + ddp_n * video.delta
+    # buffer = buffer - download_time + y + ddp_n * video.delta  # TODO, this line has a bug
+    buffer = np.sum(buffer_array) * delta
     expected_vals_dp = 0
     for i in range(D):
         expected_vals_dp += probs[i] * video.values[solution[i]]
     r0 = gamma * (delta) + expected_vals_dp
     if ddp_n > 0:
-        return r0, buffer, y
+        return r0, buffer, y, buffer_array
     else:
-        return 0, buffer, y
+        return 0, buffer, y, buffer_array
 
 
 def get_total_size(set_of_actions, video):
@@ -270,15 +295,18 @@ if __run_bola__:
         # bola_performance = []
         bola_solutions = []
         buffer_levels_bola = []
+        available_content = [-1 for _ in range(N)]
+        buffer_array_bola = [0 for _ in range(N)]
         time_levels_bola = []
-        total_reward_bola = 0
+
         bola_play_rates = []
         time_bola = 0
         buffer_bola = 0  # unit: time
         reward_bola = 0
         rebuffer_bola = 0
+        total_reward_bola = 0
 
-        bola3d = Bola3d(video, gamma, v_coeff)
+        bola3d = Bola3d(video, gamma, v_coeff, buffer_size)
 
         # bola algorithm
         n = 0
@@ -293,45 +321,59 @@ if __run_bola__:
 
             # print("getting bola action")
             bola_action = bola3d.get_action(probs)
+            # print("Bola action: {0}".format(bola_action))
             bola_solutions.append(bola_action)
             # print("getting DP action")
 
             if np.sum(bola_action) > 0:
                 total_size, download_n = get_total_size(bola_action, video)
                 download_time_bola = bandwidth.download_time(total_size, time_bola)
+                buffer_array_bola[n] = download_n
                 bola3d.take_action(bola_action, n, time_bola)
                 bola_play_rates.append(
                     (time_bola + download_time_bola, convert_action_to_rates(bola_action, sizes, delta)))
                 # print("Downloaded : {0} and took {1} seconds".format(bola_action, download_time_bola))
-                n += 1
             else:
                 download_n = 0
                 download_time_bola = wait_time
                 bola3d.take_action(bola_action, n, time_bola)
+
             time_bola += max(download_time_bola, (download_n - buffer_size) * delta + buffer_bola - download_time_bola)
 
-            reward_bola, buffer_bola, reb = calc_reward(bola_action, buffer_bola, download_time_bola, delta, probs,
-                                                        video,
-                                                        gamma)
+            if np.sum(bola_action) > 0:
+                available_content[n - 1] = time_bola
+
+            reward_bola, buffer_bola, reb, buffer_array_bola = calc_reward(bola_action, n, delta, probs, video,
+                                                                           gamma,
+                                                                           buffer_array_bola, available_content,
+                                                                           time_bola,
+                                                                           rebuffer_bola)
+            if np.sum(bola_action) > 0:
+                n += 1
+
+            bola3d.set_buffer(buffer_bola / delta)
+
             rebuffer_bola += reb
             total_reward_bola += reward_bola
+            # print("Buffer: {0}".format(buffer_bola / delta))
+            # print(("Buffer-bola: {0}".format(bola3d.buffer)))
         # print("Bola performance: {0}".format(total_reward_bola / (time_bola + t_0)))
 
         result = {}
         result['solution'] = bola_solutions
         result['time'] = time_levels_bola
-        result['buffer'] = buffer_levels_bola
-        result['reward'] = total_reward_bola / (time_bola + t_0)
-        result['final_time'] = time_bola + t_0
+        result['buffer'] = [int(x) for x in buffer_levels_bola]
+        result['reward'] = float(total_reward_bola / (time_bola + t_0))
+        result['final_time'] = float(time_bola + t_0)
         result['playing_br'] = bola_play_rates
-        result['rebuff'] = rebuffer_bola
+        result['rebuff'] = float(rebuffer_bola)
 
         with open(path + "/bola.json", 'w') as writer:
             json.dump(result, writer)
 
         print("Bola finished work for sample {0}".format(sample))
 
-__run_ddp__ = True
+__run_ddp__ = False
 #############################
 #############################
 ###         DDP          ###
@@ -366,10 +408,13 @@ if __run_ddp__:
         buffer_dp = 0
         reward_dp = 0
         rebuffer_dp = 0
+        ddp_solutions = []
         buffer_levels_ddp = []
+        available_content = [-1 for _ in range(N)]
+        buffer_array_ddp = [0 for _ in range(N)]
         time_levels_ddp = []
         ddpO_performance = []
-        ddp_solutions = []
+
         ddp_play_rates = []
         ddp_online = DDPOnline(video, buffer_size, bandwidth, gamma, t_0)
         total_reward_ddp_online = 0
@@ -389,29 +434,38 @@ if __run_ddp__:
             total_size, download_n = get_total_size(ddp_action, video)
             if np.sum(ddp_action) > 0:
                 download_time_dp = bandwidth.download_time(total_size, time_dp)
+                buffer_array_ddp[n] = download_n
+                ddp_online.take_action(ddp_action, n, time_dp)
                 ddp_play_rates.append((time_dp + download_time_dp, convert_action_to_rates(ddp_action, sizes, delta)))
-                n += 1
             else:
                 download_n = 0
                 download_time_dp = wait_time
+                ddp_online.take_action(ddp_action, n, time_dp)
 
             time_dp += max(download_time_dp, (download_n - buffer_size) * delta + buffer_dp - download_time_dp)
 
-            reward_ddp, buffer_dp, reb = calc_reward(ddp_action, buffer_dp, download_time_dp, delta, probs, video,
-                                                     gamma)
+            if np.sum(ddp_action) > 0:
+                available_content[n - 1] = time_dp
+
+            reward_ddp, buffer_dp, reb, buffer_array_ddp = calc_reward(ddp_action, n, delta, probs, video,
+                                                                       gamma, buffer_array_ddp, available_content,
+                                                                       time_dp, rebuffer_dp)
+
+            if np.sum(ddp_action) > 0:
+                n += 1
+
+            ddp_online.set_buffer(buffer_dp / delta)
             rebuffer_dp += reb
             reward_dp += reward_ddp
-
-
 
         result = {}
         result['solution'] = ddp_solutions
         result['time'] = time_levels_ddp
-        result['buffer'] = buffer_levels_ddp
-        result['reward'] = reward_dp / (time_dp)
-        result['final_time'] = time_dp
+        result['buffer'] = [int(x) for x in buffer_levels_ddp]
+        result['reward'] = float(reward_dp / (time_dp))
+        result['final_time'] = float(time_dp)
         result['playing_br'] = ddp_play_rates
-        result['rebuff'] = buffer_dp
+        result['rebuff'] = float(buffer_dp)
 
         with open(path + "/DDP.json", 'w') as writer:
             json.dump(result, writer)
@@ -428,7 +482,7 @@ if __run_ddp__:
     # plt.title("Objective values of Bola360 vs DDP-Online")
     # plt.savefig("bandwidth_change.png", dpi=600)
 
-__run_naive__ = False
+__run_naive__ = True
 #############################
 #############################
 ###       Naive           ###
@@ -462,16 +516,20 @@ if __run_naive__:
 
         naive_solutions = []
         buffer_levels_naive = []
+        available_content = [-1 for _ in range(N)]
+        buffer_array_naive = [0 for _ in range(N)]
         time_levels_naive = []
-        total_reward_naive = 0
+
         naive_play_rates = []
+
         time_naive = 0
         buffer_naive = 0  # unit: time
         reward_naive = 0
         rebuffer_naive = 0
+        total_reward_naive = 0
 
-        __tile_to_download__ = 2
-        naive_alg = Naive(video, __tile_to_download__)
+        __tile_to_download__ = 1
+        naive_alg = Naive(video, buffer_size, __tile_to_download__)
         # naive algorithm
         n = 0
 
@@ -489,20 +547,32 @@ if __run_naive__:
             if np.sum(naive_action) > 0:
                 total_size, download_n = get_total_size(naive_action, video)
                 download_time_naive = bandwidth.download_time(total_size, time_naive)
+                buffer_array_naive[n] = download_n
                 naive_alg.take_action(naive_action, n, time_naive)
                 naive_play_rates.append(
                     (time_naive + download_time_naive, convert_action_to_rates(naive_action, sizes, delta)))
-                n += 1
+
             else:
                 download_n = 0
                 download_time_naive = wait_time
                 naive_alg.take_action(naive_action, n, time_naive)
+
             time_naive += max(download_time_naive,
                               (download_n - buffer_size) * delta + buffer_naive - download_time_naive)
 
-            reward_naive, buffer_naive, reb = calc_reward(naive_action, buffer_naive, download_time_naive, delta, probs,
-                                                          video,
-                                                          gamma)
+            if np.sum(naive_action) > 0:
+                available_content[n - 1] = time_naive
+
+            reward_naive, buffer_naive, reb, buffer_array_naive = calc_reward(naive_action, n, delta, probs,
+                                                                              video,
+                                                                              gamma, buffer_array_naive,
+                                                                              available_content, time_naive,
+                                                                              rebuffer_naive)
+
+            if np.sum(naive_action) > 0:
+                n += 1
+
+            naive_alg.set_buffer(buffer_naive / delta)
             rebuffer_naive += reb
             total_reward_naive += reward_naive
         # print("Bola performance: {0}".format(total_reward_bola / (time_bola + t_0)))
@@ -510,11 +580,11 @@ if __run_naive__:
         result = {}
         result['solution'] = naive_solutions
         result['time'] = time_levels_naive
-        result['buffer'] = buffer_levels_naive
-        result['reward'] = total_reward_naive / (time_naive + t_0)
-        result['final_time'] = time_naive + t_0
+        result['buffer'] = [int(x) for x in buffer_levels_naive]
+        result['reward'] = float(total_reward_naive / (time_naive + t_0))
+        result['final_time'] = float(time_naive + t_0)
         result['playing_br'] = naive_play_rates
-        result['rebuff'] = rebuffer_naive
+        result['rebuff'] = float(rebuffer_naive)
 
         with open(path + "/naive_{0}.json".format(__tile_to_download__), 'w') as writer:
             json.dump(result, writer)

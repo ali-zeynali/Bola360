@@ -2,11 +2,12 @@ import numpy as np
 
 
 class Bola3d:
-    def __init__(self, video, gamma, v_coeff):
+    def __init__(self, video, gamma, v_coeff, buffer_capacity):
         self.video = video
         # self.head_move = head_move
         self.gamma = gamma
         self.buffer = 0
+        self.buffer_capacity = buffer_capacity
         self.D = video.D
         self.M = len(video.values)
         self.V = v_coeff * (video.buffer_size - self.D) / (video.values[-1] + gamma * video.delta)
@@ -37,19 +38,30 @@ class Bola3d:
                 max_rho = rho
                 solution = sol
                 max_n = n_sols
-        return solution
+        n = 0
+        for a in solution:
+            if a > 0:
+                n += 1
+        if self.buffer_capacity - self.buffer >= n:
+            return solution
+        else:
+            return [0 for _ in range(self.D)]
 
+    def set_buffer(self, buffer):
+        self.buffer = buffer
     def take_action(self, solution, n, time):
-        finished_segments = int(time / self.video.delta)
-        for i in range(self.last_finished_segments, min(finished_segments, n + 1)):
-            if i >= 0:
-                self.buffer -= self.downloaded_segments[i]
-        self.buffer = max(self.buffer, 0)
+        # finished_segments = int(time / self.video.delta)
+        # finished_segments = min(finished_segments, n) # consider rebuff
+        # for i in range(self.last_finished_segments, min(finished_segments, n + 1)):
+        #     if i >= 0:
+        #         self.buffer -= self.downloaded_segments[i]
+        # self.last_finished_segments = finished_segments
+        # self.buffer = max(self.buffer, 0)
         number_of_downloaded_segments = 0
         for v in solution:
             if v > 0:
                 number_of_downloaded_segments += 1
-        self.buffer += number_of_downloaded_segments
+        # self.buffer += number_of_downloaded_segments
         self.downloaded_segments[n] = number_of_downloaded_segments
 
     def calc_rho(self, solution, probs):

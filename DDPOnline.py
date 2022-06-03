@@ -22,6 +22,10 @@ class DDPOnline:
         self.M = len(video.values)
         self.gamma = gamma
         self.all_sols = self.get_all_solutions(self.D)
+        self.buffer_capacity = buffer_size
+        self.buffer = 0
+        self.last_finished_segments = -1
+        self.downloaded_segments = [0 for _ in range(self.video.N)]
 
     def get_all_solutions(self, D):
         if D == 0:
@@ -73,4 +77,29 @@ class DDPOnline:
         if self.solutions == None:
             return [0 for _ in range(self.D)]
         else:
-            return self.solutions
+            n = 0
+            for a in self.solutions:
+                if a > 0:
+                    n += 1
+            if self.buffer_capacity - self.buffer >= n:
+                return self.solutions
+            else:
+                return [0 for _ in range(self.D)]
+    def set_buffer(self, buffer):
+        self.buffer = buffer
+    def take_action(self, solution, n, time):
+        # finished_segments = int(time / self.video.delta)
+        # finished_segments = min(finished_segments, n) # consider rebuff
+        # for i in range(self.last_finished_segments, min(finished_segments, n + 1)):
+        #     if i >= 0:
+        #         self.buffer -= self.downloaded_segments[i]
+        # self.last_finished_segments = finished_segments
+        # self.buffer = max(self.buffer, 0)
+        number_of_downloaded_segments = 0
+        for v in solution:
+            if v > 0:
+                number_of_downloaded_segments += 1
+        # self.buffer += number_of_downloaded_segments
+        self.downloaded_segments[n] = number_of_downloaded_segments
+
+
