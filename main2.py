@@ -97,7 +97,7 @@ def convert_action_to_rates(actions, sizes, delta):
     return rates
 
 
-def plot_bandwidth(changes, bola, dt, final_time, bitrates, V, D):
+def plot_algorithm_changes(changes, bola, dt, final_time, bitrates, V, D):
     fig = plt.figure(0)
     x = []
     y = []
@@ -165,6 +165,30 @@ def plot_bandwidth(changes, bola, dt, final_time, bitrates, V, D):
     plt.ylabel("Bitrate (Mbps)")
     plt.title("V(Bola): {0}".format(V))
     plt.savefig("figures/bandwidth_v_{0}.png".format(V), dpi=600)
+
+def plot_bandwith(changes, dt, final_time, bitrates, name):
+    fig = plt.figure(0)
+    x = []
+    y = []
+    t = 0
+    indx = 0
+    changes = changes.copy()
+    while t < final_time:
+        while changes[indx][0] < t:
+            indx += 1
+        x.append(t)
+        y.append(changes[indx][1] / D)
+        t += dt
+    plt.plot(x, y, label="Network", linewidth=1.5)
+
+
+
+    for br in bitrates:
+        plt.plot([0, final_time], [br, br], label='_nolegend_', linestyle='dashed', color="gray", linewidth=0.7)
+    plt.legend()
+    plt.xlabel("Time (s)")
+    plt.ylabel("Bitrate (Mbps)")
+    plt.savefig("figures/{0}.png".format(name), dpi=600)
 
 
 def save_meta(N, D, buffer_size, delta, gamma, t_0, wait_time, sizes, b_error, v_coeff, actual_view,
@@ -485,7 +509,7 @@ if __run_ddp__:
     # plt.title("Objective values of Bola360 vs DDP-Online")
     # plt.savefig("bandwidth_change.png", dpi=600)
 
-__run_naive__ = True
+__run_naive__ = False
 #############################
 #############################
 ###       Naive           ###
@@ -594,7 +618,9 @@ if __run_naive__:
 
         print("Naive {1} finished work for sample {0}".format(sample, __tile_to_download__))
 
-__plot_bandwidth__ = False
+__plot_bandwidth__ = True
 if __plot_bandwidth__:
-    plot_bandwidth(bandwidth.throuput_changes, bola_play_rates, 0.1, max(time_bola, delta * N), sizes / delta, v_coeff,
-                   D)
+    # plot_bandwidth(bandwidth.throuput_changes, bola_play_rates, 0.1, max(time_bola, delta * N), sizes / delta, v_coeff,
+    #                D)
+    bandwidth = Bandwidth(data_path, error_rate=bandwidth_error)
+    plot_bandwith(bandwidth.throuput_changes, 0.1, 1000, sizes / delta, "Bandwidth_4G_BW")
