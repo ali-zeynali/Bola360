@@ -59,9 +59,12 @@ def calc_reward(solution, segment, delta, probs, video, gamma, buffer_array, ava
     # buffer = buffer - download_time + y + ddp_n * video.delta  # TODO, this line has a bug
     buffer = np.sum(buffer_array) * delta
     expected_vals_dp = 0
+    expected_smooth = 0
     for i in range(D):
-        expected_vals_dp += probs[i] * video.values[solution[i]]
-    r0 = gamma * (delta) + expected_vals_dp
+        if solution[i] > 0:
+            expected_vals_dp += probs[i] * video.values[solution[i]]
+            expected_smooth += probs[i] * delta
+    r0 = expected_vals_dp + expected_smooth
     if ddp_n > 0:
         return r0, buffer, y, buffer_array
     else:
@@ -528,7 +531,7 @@ if __run_naive__:
         rebuffer_naive = 0
         total_reward_naive = 0
 
-        __tile_to_download__ = 1
+        __tile_to_download__ = 4
         naive_alg = Naive(video, buffer_size, __tile_to_download__)
         # naive algorithm
         n = 0
