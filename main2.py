@@ -2,11 +2,10 @@ import glob
 import os
 import shutil
 
-from matplotlib import pyplot as plt
-
 from Bola3d import *
 from DDP import *
 from DDPOnline import *
+from Evaluate import *
 from HeadMoves import *
 from Naive import *
 from Video import *
@@ -41,19 +40,22 @@ def calc_reward(solution, segment, delta, probs, video, gamma, buffer_array, ava
         buffer_array[i] = 0
 
     last_available = 0 - delta
-    y = None
+    reb = None
     for i in range(segment):
         if available_time[i] > 0:
             last_available = available_time[i]
 
         if buffer_array[i] > 0:
-            y = 0
+            reb = 0
             break
 
-    if y is None:
-        y = time - last_available - delta
+    if reb is None:
+        # if time > last_available + delta:
+        reb = time - last_available - delta
         x = 1
 
+    if reb < 0:
+        print("OMG")
     # y = max(download_time - buffer, 0) #TODO, this line has a bug
     # buffer = max(buffer - download_time, 0) + ddp_n * video.delta
     # buffer = buffer - download_time + y + ddp_n * video.delta  # TODO, this line has a bug
@@ -66,9 +68,9 @@ def calc_reward(solution, segment, delta, probs, video, gamma, buffer_array, ava
             expected_smooth += probs[i] * delta
     r0 = expected_vals_dp + expected_smooth
     if ddp_n > 0:
-        return r0, buffer, y, buffer_array
+        return r0, buffer, reb, buffer_array
     else:
-        return 0, buffer, y, buffer_array
+        return 0, buffer, reb, buffer_array
 
 
 def get_total_size(set_of_actions, video):
@@ -97,8 +99,38 @@ def convert_action_to_rates(actions, sizes, delta):
     return rates
 
 
-def plot_algorithm_changes(changes, bola, dt, final_time, bitrates, V, D):
-    fig = plt.figure(0)
+def plot_algorithm_changes(changes, algorithms, sizes, delta, dt, bitrates, path, DDP=False):
+    global figure_number
+    figure_number += 1
+    fig = plt.figure(figure_number)
+
+    final_time = 0
+    for name in algorithms:
+        if not DDP and name == "DP-Online":
+            continue
+        algorithm = algorithms[name]
+        solutions = algorithm['solution']
+        times = algorithm['time']
+
+        if times[-1] > final_time:
+            final_time = times[-1]
+        play_rate = []
+        time_stamp = []
+        previous_rate = -1
+        for i in range(len(solutions)):
+            size = 0
+            for a in solutions[i]:
+                size += sizes[a]
+            if previous_rate >= 0:
+                time_stamp.append(times[i])
+                play_rate.append(previous_rate)
+
+            previous_rate = size / delta
+            time_stamp.append(times[i])
+            play_rate.append(size / delta)
+
+        plt.plot(time_stamp, play_rate, label=name, linewidth=1.5)
+
     x = []
     y = []
     t = 0
@@ -108,66 +140,51 @@ def plot_algorithm_changes(changes, bola, dt, final_time, bitrates, V, D):
         while changes[indx][0] < t:
             indx += 1
         x.append(t)
-        y.append(changes[indx][1] / D)
+        y.append(changes[indx][1])
         t += dt
-    plt.plot(x, y, label="Network", linewidth=1.5)
-
-    # Bola algorithm - avg
-    x = []
-    y = []
-    t = 0
-    last_played_time = 0
-    indx = 0
-    while t < final_time:
-
-        while t < bola[indx][0]:
-            x.append(t)
-            y.append(0)
-            t += dt
-        x.append(t)
-        y.append(np.average(bola[indx][1]))
-
-        x.append(t + delta)
-        y.append(np.average(bola[indx][1]))
-
-        t += delta
-        indx += 1
-
-    plt.plot(x, y, label="Avg(Bola)", linewidth=1.5)
-
-    # Bola algorithm - max
-    x = []
-    y = []
-    t = 0
-    last_played_time = 0
-    indx = 0
-    while t < final_time:
-
-        while t < bola[indx][0]:
-            x.append(t)
-            y.append(0)
-            t += dt
-        x.append(t)
-        y.append(np.max(bola[indx][1]))
-
-        x.append(t + delta)
-        y.append(np.max(bola[indx][1]))
-
-        t += delta
-        indx += 1
-
-    plt.plot(x, y, label="Max(Bola)", linewidth=1.5)
+    plt.plot(x, y, label="Network", linewidth=1)
 
     for br in bitrates:
         plt.plot([0, final_time], [br, br], label='_nolegend_', linestyle='dashed', color="gray", linewidth=0.7)
     plt.legend()
     plt.xlabel("Time (s)")
     plt.ylabel("Bitrate (Mbps)")
-    plt.title("V(Bola): {0}".format(V))
-    plt.savefig("figures/bandwidth_v_{0}.png".format(V), dpi=600)
+    plt.savefig(path, dpi=600)
 
-def plot_bandwith(changes, dt, final_time, bitrates, name):
-    fig = plt.figure(0)
+
+def plot_algorithm_changes_avg(changes, algorithms, sizes, delta, dt, bitrates, path, DDP=False):
+    global figure_number
+    figure_number += 1
+    fig = plt.figure(figure_number)
+
+    final_time = 0
+    for name in algorithms:
+        if not DDP and name == "DP-Online":
+            continue
+        algorithm = algorithms[name]
+        solutions = algorithm['solution']
+        times = algorithm['time']
+
+        if times[-1] > final_time:
+            final_time = times[-1]
+        play_rate = []
+        time_stamp = []
+        previous_rate = -1
+        for i in range(len(solutions)):
+            size = []
+            for a in solutions[i]:
+                if a > 0:
+                    size.append(sizes[a])
+            if previous_rate >= 0:
+                time_stamp.append(times[i])
+                play_rate.append(previous_rate)
+            size = np.average(size) if len(size) > 0 else 0
+            previous_rate = size / delta
+            time_stamp.append(times[i])
+            play_rate.append(size / delta)
+
+        plt.plot(time_stamp, play_rate, label=name, linewidth=1.5)
+
     x = []
     y = []
     t = 0
@@ -177,11 +194,34 @@ def plot_bandwith(changes, dt, final_time, bitrates, name):
         while changes[indx][0] < t:
             indx += 1
         x.append(t)
-        y.append(changes[indx][1] / D)
+        y.append(changes[indx][1])
+        t += dt
+    plt.plot(x, y, label="Network", linewidth=1)
+
+    for br in bitrates:
+        plt.plot([0, final_time], [br, br], label='_nolegend_', linestyle='dashed', color="gray", linewidth=0.7)
+    plt.legend()
+    plt.xlabel("Time (s)")
+    plt.ylabel("Bitrate (Mbps)")
+    plt.savefig(path, dpi=600)
+
+
+def plot_bandwith(changes, dt, final_time, bitrates, name):
+    global figure_number
+    figure_number += 1
+    fig = plt.figure(figure_number)
+    x = []
+    y = []
+    t = 0
+    indx = 0
+    changes = changes.copy()
+    while t < final_time:
+        while changes[indx][0] < t:
+            indx += 1
+        x.append(t)
+        y.append(changes[indx][1])
         t += dt
     plt.plot(x, y, label="Network", linewidth=1.5)
-
-
 
     for br in bitrates:
         plt.plot([0, final_time], [br, br], label='_nolegend_', linestyle='dashed', color="gray", linewidth=0.7)
@@ -223,84 +263,16 @@ def read_meta(path):
         data = json.load(reader)
     return data
 
-
-# ratio = 2
-N = 30
-D = 4
-
-buffer_size = 8  # number of segments fit into buffer, unit: integer
-delta = 5
-gamma = 2
-t_0 = delta / 10
-wait_time = t_0
-
-data_path = "dataset/bandwidth/4G/4G_BWData.json"
-# data_path = "fix_bandwidth.json"
-
-bandwidth_error = 0.10
-sizes = np.array([0, 1, 2, 3, 4, 5, 6, 7, 8]) * delta / 2
-sizes = np.array([0, 1, 4, 5, 6, 7, 8, 9, 10, 11, 12]) * delta
-
-sizes = np.array([0, 1, 5, 7, 9, 11]) * delta
-M = len(sizes) - 1
-# v_coeff = buffer_size / (buffer_size - D)
-v_coeff = 1
-# values = np.array([i for i in range(M)]) * delta * 50/ 2
-# for i in range(len(values)):
-#     values[i] = np.power(values[i], 2)
-values = np.array([0 if x == 0 else np.log(x / sizes[1]) for x in sizes])
-
-video = Video(N, delta, D, values, sizes, buffer_size)
-bandwidth = Bandwidth(data_path, error_rate=bandwidth_error)
-nav_graph_path = "dataset/headmovement/navG1.json"
-
-headMovements = HeadMoves(N, D, path=nav_graph_path)
-
-__run_optimal_offline__ = False
-#############################
-#############################
-###   OPTIMAL OFFLINE     ###
-#############################
-#############################
-if __run_optimal_offline__:
-    samples = 1
-    for i in range(samples):
-        actual_movement = headMovements.get_sample_actual_view()
-        headMovements.set_actual_views(actual_movement)
-        sample_path = "results/sample_{0}/".format(i)
-        try:
-            shutil.rmtree(sample_path)
-        except Exception:
-            pass
-
-        os.mkdir(sample_path)
-
-        save_meta(N, D, buffer_size, delta, gamma, t_0, wait_time, sizes, bandwidth_error, v_coeff, actual_movement,
-                  path=sample_path + "meta.json")
-
-        # bola3d = Bola3d(video, gamma, v_coeff)
-        ddp = DDP(video, buffer_size, bandwidth, gamma, t_0)
-        # ddp_online = DDPOnline(video,buffer_size, bandwidth, gamma, t_0)
-
-        print("Sample: {0}\tCalculating optimal offline".format(i))
-        ddp.train(headMovements.get_all_probs())
-        optimal_offline = ddp.get_optimal_reward()
-        ddp.save_info(path=sample_path + "offline.json")
-        # print("Offline: ", optimal_offline)
-
-__run_bola__ = False
-#############################
-#############################
-###         BOLA          ###
-#############################
-#############################
-
-if __run_bola__:
+def run_bola_experiment(__print__=True):
+    if __print__:
+        print("------> Running Bola360 algorithm")
     sample_paths = get_sample_paths()
     for [path, sample] in sample_paths:
-        print("Bola starts work for sample {0}".format(sample))
+        if __print__:
+            print("Bola starts work for sample {0}".format(sample))
         meta = read_meta(path + "/meta.json")
         N = meta['N']
+        # N = 20 #TODO: remove this
         D = meta['D']
         buffer_size = meta['b_max']
         delta = meta['delta']
@@ -310,6 +282,7 @@ if __run_bola__:
         sizes = np.array(meta['sizes'])
         bandwidth_error = meta['b_error']
         v_coeff = meta['V']
+        # v_coeff = 0.72 # TODO: remove this
         actual_movement = meta['view']
 
         video = Video(N, delta, D, values, sizes, buffer_size)
@@ -350,6 +323,7 @@ if __run_bola__:
             bola_action = bola3d.get_action(probs)
             # print("Bola action: {0}".format(bola_action))
             bola_solutions.append(bola_action)
+            # print("Action for n:{0}, \t{1}".format(n, bola_action))
             # print("getting DP action")
 
             if np.sum(bola_action) > 0:
@@ -368,7 +342,7 @@ if __run_bola__:
             time_bola += max(download_time_bola, (download_n - buffer_size) * delta + buffer_bola - download_time_bola)
 
             if np.sum(bola_action) > 0:
-                available_content[n - 1] = time_bola
+                available_content[n] = time_bola
 
             reward_bola, buffer_bola, reb, buffer_array_bola = calc_reward(bola_action, n, delta, probs, video,
                                                                            gamma,
@@ -377,6 +351,11 @@ if __run_bola__:
                                                                            rebuffer_bola)
             if np.sum(bola_action) > 0:
                 n += 1
+
+            # if n >= N:
+            #     time_levels_bola.append(time_bola)
+            #     buffer_levels_bola.append(buffer_bola)
+
 
             bola3d.set_buffer(buffer_bola / delta)
 
@@ -397,22 +376,18 @@ if __run_bola__:
 
         with open(path + "/bola.json", 'w') as writer:
             json.dump(result, writer)
+        if __print__:
+            print("Bola finished work for sample {0}".format(sample))
 
-        print("Bola finished work for sample {0}".format(sample))
 
-__run_ddp__ = False
-#############################
-#############################
-###         DDP          ###
-#############################
-#############################
-
-if __run_ddp__:
+def run_ddp_experiment():
+    print("------> Running DP-Online algorithm")
     sample_paths = get_sample_paths()
     for [path, sample] in sample_paths:
         print("DDP starts work for sample {0}".format(sample))
         meta = read_meta(path + "/meta.json")
         N = meta['N']
+        # N = 20  # TODO: remove this
         D = meta['D']
         buffer_size = meta['b_max']
         delta = meta['delta']
@@ -472,7 +447,7 @@ if __run_ddp__:
             time_dp += max(download_time_dp, (download_n - buffer_size) * delta + buffer_dp - download_time_dp)
 
             if np.sum(ddp_action) > 0:
-                available_content[n - 1] = time_dp
+                available_content[n] = time_dp
 
             reward_ddp, buffer_dp, reb, buffer_array_ddp = calc_reward(ddp_action, n, delta, probs, video,
                                                                        gamma, buffer_array_ddp, available_content,
@@ -492,37 +467,23 @@ if __run_ddp__:
         result['reward'] = float(reward_dp / (time_dp))
         result['final_time'] = float(time_dp)
         result['playing_br'] = ddp_play_rates
-        result['rebuff'] = float(buffer_dp)
+        result['rebuff'] = float(rebuffer_dp)
 
         with open(path + "/DDP.json", 'w') as writer:
             json.dump(result, writer)
 
         print("DDP finished work for sample {0}".format(sample))
 
-    # print("Bola: r = {0}, time={1}, b={2}, r_0={3}".format(reward_bola/ time_bola,time_bola, buffer_bola, reward_bola))
-    # print("DPP: r = {0}, time={1}, b={2}, r_0={3}".format(reward_dp/ time_dp,time_dp, buffer_dp, reward_dp))
 
-    # plt.plot(max_bands, bola_performance, label="Bola360")
-    # plt.plot(max_bands, ddpO_performance, label="DDP-Online")
-    # plt.legend()
-    # plt.xlabel("Bandwidth's average")
-    # plt.title("Objective values of Bola360 vs DDP-Online")
-    # plt.savefig("bandwidth_change.png", dpi=600)
-
-__run_naive__ = False
-#############################
-#############################
-###       Naive           ###
-#############################
-#############################
-
-if __run_naive__:
-
+def run_naive_experiment(__tile_to_download__):
+    # __tile_to_download__ = 2
+    print("------> Running Naive {0} algorithm".format(__tile_to_download__))
     sample_paths = get_sample_paths()
     for [path, sample] in sample_paths:
         print("Naive starts work for sample {0}".format(sample))
         meta = read_meta(path + "/meta.json")
         N = meta['N']
+        # N = 20  # TODO: remove this
         D = meta['D']
         buffer_size = meta['b_max']
         delta = meta['delta']
@@ -555,7 +516,6 @@ if __run_naive__:
         rebuffer_naive = 0
         total_reward_naive = 0
 
-        __tile_to_download__ = 4
         naive_alg = Naive(video, buffer_size, __tile_to_download__)
         # naive algorithm
         n = 0
@@ -588,7 +548,7 @@ if __run_naive__:
                               (download_n - buffer_size) * delta + buffer_naive - download_time_naive)
 
             if np.sum(naive_action) > 0:
-                available_content[n - 1] = time_naive
+                available_content[n] = time_naive
 
             reward_naive, buffer_naive, reb, buffer_array_naive = calc_reward(naive_action, n, delta, probs,
                                                                               video,
@@ -618,9 +578,173 @@ if __run_naive__:
 
         print("Naive {1} finished work for sample {0}".format(sample, __tile_to_download__))
 
+def tune_bola(N, D, buffer_size, delta, gamma, t_0, wait_time, sizes, bandwidth_error, actual_movement):
+    V_ranges = np.arange(0.6, 1, 0.01)
+
+    performances = {}
+    for v in V_ranges:
+        print("Checking V-coeff value: {0}".format(v))
+        samples = 4
+        for i in range(samples):
+            sample_path = "results/sample_{0}/".format(i)
+            save_meta(N, D, buffer_size, delta, gamma, t_0, wait_time, sizes, bandwidth_error, v, actual_movement,
+                      path=sample_path + "meta.json")
+        run_bola_experiment(__print__=False)
+
+        bola_perf, _, __, ___, ____ = compare_rewards(number_of_samples=4, __print__=False)
+        performances[v] = bola_perf
+    max_v = 0
+    max_perf = 0
+    for v in performances:
+        perf = np.average(performances[v])
+        if perf > max_perf:
+            max_perf = perf
+            max_v = v
+    print("Best v was: {0} with performance: {1}".format(max_v, max_perf))
+    return max_v
+
+
+
+
+# ratio = 2
+N = 20
+D = 4
+
+buffer_size = 20  # number of segments fit into buffer, unit: integer
+delta = 5
+gamma = 0.5
+t_0 = delta / 10
+wait_time = t_0
+
+data_path = "dataset/bandwidth/4G/4G_BWData.json"
+# data_path = "fix_bandwidth.json"
+
+bandwidth_error = 0.10
+sizes = np.array([0, 1, 2, 3, 4, 5, 6, 7, 8]) * delta / 2
+sizes = np.array([0, 1, 4, 5, 6, 7, 8, 9, 10, 11, 12]) * delta
+
+sizes = np.array([0, 1, 3, 5, 7, 9, 11]) * delta
+M = len(sizes) - 1
+# v_coeff = buffer_size / (buffer_size - D)
+# v_coeff = 0.98
+
+# values = np.array([i for i in range(M)]) * delta * 50/ 2
+# for i in range(len(values)):
+#     values[i] = np.power(values[i], 2)
+values = np.array([0 if x == 0 else np.log(x / sizes[1]) for x in sizes])
+# v_coeff = 0.7 * (values[-1] + gamma * delta) / (buffer_size - D)  # TODO: update/remove this
+
+video = Video(N, delta, D, values, sizes, buffer_size)
+bandwidth = Bandwidth(data_path, error_rate=bandwidth_error)
+nav_graph_path = "dataset/headmovement/navG1.json"
+
+headMovements = HeadMoves(N, D, path=nav_graph_path)
+
+actual_movement = headMovements.get_sample_actual_view()
+# v_coeff = tune_bola(N, D, buffer_size, delta, gamma, t_0, wait_time, sizes, bandwidth_error, actual_movement)
+v_coeff = 0.98
+__save_meta__ = True
+if __save_meta__:
+    samples = 4
+    for i in range(samples):
+        actual_movement = headMovements.get_sample_actual_view()
+        headMovements.set_actual_views(actual_movement)
+        sample_path = "results/sample_{0}/".format(i)
+        # try:
+        #     shutil.rmtree(sample_path)
+        # except Exception:
+        #     pass
+        #
+        # os.mkdir(sample_path)
+
+        save_meta(N, D, buffer_size, delta, gamma, t_0, wait_time, sizes, bandwidth_error, v_coeff, actual_movement,
+                  path=sample_path + "meta.json")
+__run_optimal_offline__ = False
+#############################
+#############################
+###   OPTIMAL OFFLINE     ###
+#############################
+#############################
+if __run_optimal_offline__:
+    samples = 1
+    for i in range(samples):
+        actual_movement = headMovements.get_sample_actual_view()
+        headMovements.set_actual_views(actual_movement)
+        sample_path = "results/sample_{0}/".format(i)
+        try:
+            shutil.rmtree(sample_path)
+        except Exception:
+            pass
+
+        os.mkdir(sample_path)
+
+        save_meta(N, D, buffer_size, delta, gamma, t_0, wait_time, sizes, bandwidth_error, v_coeff, actual_movement,
+                  path=sample_path + "meta.json")
+
+        # bola3d = Bola3d(video, gamma, v_coeff)
+        ddp = DDP(video, buffer_size, bandwidth, gamma, t_0)
+        # ddp_online = DDPOnline(video,buffer_size, bandwidth, gamma, t_0)
+
+        print("Sample: {0}\tCalculating optimal offline".format(i))
+        ddp.train(headMovements.get_all_probs())
+        optimal_offline = ddp.get_optimal_reward()
+        ddp.save_info(path=sample_path + "offline.json")
+        # print("Offline: ", optimal_offline)
+
+
+
+
+
+run_bola_experiment()
+run_ddp_experiment()
+run_naive_experiment(1)
+run_naive_experiment(2)
+run_naive_experiment(4)
+
+
 __plot_bandwidth__ = True
 if __plot_bandwidth__:
-    # plot_bandwidth(bandwidth.throuput_changes, bola_play_rates, 0.1, max(time_bola, delta * N), sizes / delta, v_coeff,
-    #                D)
+    figure_number = 0
+    sample_paths = get_sample_paths()
+    for [path, sample] in sample_paths:
+        print("Plotting for sample: {0}".format(sample))
+        meta = read_meta(path + "/meta.json")
+        N = meta['N']
+        D = meta['D']
+        buffer_size = meta['b_max']
+        delta = meta['delta']
+        gamma = meta['gamma']
+        t_0 = meta['t_0']
+        wait_time = meta['wait']
+        sizes = np.array(meta['sizes'])
+        bandwidth_error = meta['b_error']
+        v_coeff = meta['V']
+        actual_movement = meta['view']
+
+        bola = read_meta(path + "/bola.json")
+        ddp = read_meta(path + "/DDP.json")
+        naive_1 = read_meta(path + "/naive_1.json")
+        naive_h = read_meta(path + "/naive_2.json")
+        naive_f = read_meta(path + "/naive_4.json")
+
+        algorithms = {}
+        algorithms['Bola360'] = bola
+        algorithms['DP-Online'] = ddp
+        algorithms['Naive1'] = naive_1
+        algorithms['Naive-h'] = naive_h
+        algorithms['Naive-f'] = naive_f
+
+        plot_algorithm_changes(bandwidth.throuput_changes, algorithms, sizes, delta, 0.1, sizes / delta,
+                               path + "/algorithms_V_B{0}.png".format(buffer_size, v_coeff), DDP=False)
+        plot_algorithm_changes_avg(bandwidth.throuput_changes, algorithms, sizes, delta, 0.1, sizes / delta,
+                                   path + "/algorithms_V_B{0}_avg.png".format(buffer_size, v_coeff), DDP=False)
+
+        compare_buffers(path + "/buffers_{0}.png".format(buffer_size), sample, delta, DDP=False)
     bandwidth = Bandwidth(data_path, error_rate=bandwidth_error)
     plot_bandwith(bandwidth.throuput_changes, 0.1, 1000, sizes / delta, "Bandwidth_4G_BW")
+
+
+
+    compare_rewards()
+    compare_rebuff()
+

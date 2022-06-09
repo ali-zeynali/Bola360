@@ -82,7 +82,7 @@ class Bola3d:
             if m > 0:
                 a = 1
             rho += probs[d] * a * (self.V * (v + self.gamma * self.video.delta) - self.buffer)
-            rho2 += self.video.sizes[m]
+            rho2 += self.video.sizes[m] * a
         return rho / rho2
 
     def get_all_solutions(self, D):

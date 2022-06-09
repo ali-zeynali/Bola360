@@ -53,7 +53,7 @@ class DDPOnline:
                 continue
             total_size = self.get_total_size(m)
             x = self.bandwidth.expected_download_time(total_size, t)
-            x0 = int(x / self.t_0) * self.t_0
+            x0 = np.ceil(x / self.t_0) * self.t_0
             xp = max(x0, b + self.D * self.video.delta - self.buffer_size)
             y = max(xp - b, 0)
             tp = t + xp
@@ -65,9 +65,9 @@ class DDPOnline:
                 continue
             if int(tp / self.t_0) >= self.Nt_max:
                 continue
-            rp = r0 + self.gamma * (self.video.delta) + expected_vals
+            rp = r0 + self.gamma * (self.video.delta - y) + expected_vals
             new_val = rp / tp
-            old_val = self.rewards[int(tp / self.t_0)][int(bp / self.b_0)] / self.Time
+            old_val = self.rewards[int(tp / self.t_0)][int(bp / self.b_0)] / tp #TOTO: It was division by self.Time
             if new_val > old_val:
                 self.solutions = m
                 self.Time = tp
