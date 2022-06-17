@@ -26,6 +26,7 @@ class Naive:
             if sizes[i] <= target_size < sizes[i + 1]:
                 bitrate = i
                 break
+        bitrate = max(bitrate, 1)
         solution = [0 for _ in range(self.D)]
         for i in range(self.D):
             if sorted_probs_indexes[i] < self.tile_to_download:
